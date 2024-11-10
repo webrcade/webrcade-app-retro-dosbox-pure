@@ -3,9 +3,14 @@ import {
   Controller,
   KeyCodeToControlMapping,
   RetroAppWrapper,
+  ScriptAudioProcessor,
   DisplayLoop,
+  SCREEN_CONTROLS,
   LOG,
 } from '@webrcade/app-common';
+
+import { Prefs } from './prefs';
+import { FileTracker } from './files';
 
 class QuakeKeyCodeToControlMapping extends KeyCodeToControlMapping {
   constructor() {
@@ -16,6 +21,10 @@ class QuakeKeyCodeToControlMapping extends KeyCodeToControlMapping {
 }
 
 export class Emulator extends RetroAppWrapper {
+
+  SAVE_NAME = 'file-mods.zip';
+  DELETED_PATH = "deleted.json";
+
   constructor(app, debug = false) {
     super(app, debug);
     this.analogMode = true;
@@ -28,21 +37,26 @@ export class Emulator extends RetroAppWrapper {
     this.escapeDownTime = -1;
     this.blockKeys = false;
     this.gameRunning = false;
+    this.jsAudio = true;
+    this.prefs = new Prefs(this);
+    this.audioProcessor = this.createAudioProcessor();
+    this.fileTracker = new FileTracker(this);
 
-    this.wadType = this.getProps().wadType;
-    if (!this.wadType) {
-      this.wadType = 0;
-    }
+    this.setStateFilePath("/home/web_user/retroarch/userdata/states/.state");
 
-    this.wadPath = this.getProps().wadPath;
-    if (!this.wadPath) {
-      this.wadPath = '';
-    }
-    this.wadPath = this.wadPath.trim();
+    // Force vsync
+// this.vsync = true;
+    // Force 60 FPS
+// this.force60 = true;
 
-    this.paks = {};
+    this.vsync = true;
+    this.force60 = true;
+
+    // Audio rate
+    this.audioRate = 48000;
+
     this.binaryFileName = null;
-    this.dirName = null;
+    // this.dirName = null;
 
     this.maxKeys = 100;
     this.keyCount = 0;
@@ -52,7 +66,7 @@ export class Emulator extends RetroAppWrapper {
     }
 
     this.pointerLockHandler = async () => {
-      if (!document.pointerLockElement) {
+      if (!document.pointerLockElement && !this.app.isKeyboardShown()) {
         await this.canvas.requestPointerLock();
       }
     }
@@ -74,7 +88,6 @@ export class Emulator extends RetroAppWrapper {
 
         this.mouseAbsX = x;
         this.mouseAbsY = y;
-        //console.log(x + ", " + y)
       }
     };
 
@@ -116,67 +129,148 @@ export class Emulator extends RetroAppWrapper {
     };
 
     document.onkeydown = (e) => {
-// TODO: Disable when entering menu, etc.
+      if (
+        this.paused ||
+        this.app.isKeyboardShown() /*||
+        (this.isKeyboardJoystickMode() &&
+          this.controllers.getController(0).getKeyCodeToControllerMapping().getKeyCodeToControlId()[e.code] !== undefined)*/
+      ) {
+        return;
+      }
+
+      this.onKeyboardEvent(e);
+
+      // Disable when entering menu, etc.
       if (this.blockKeys) {
         e.preventDefault();
       }
+
       if (e.repeat) {
         // Ignore repeated key events
         return;
-    }
+      }
 
       const code = getKeyCode(e.code);
       if (code !== 0 && this.keyCount < this.maxKeys) {
         const key = this.keys[this.keyCount++];
-        // if (e.code === 'Escape') {
-        //   if (this.escapeDownTime === -1) {
-        //     this.escapeDownTime = Date.now();
-        //   }
-        //   return;
-        // }
         key[0] = code;
         key[1] = 1;
       }
     };
 
     document.onkeyup = (e) => {
+      if (
+        this.paused ||
+        this.app.isKeyboardShown() /*||
+        (this.isKeyboardJoystickMode() &&
+          this.controllers.getController(0).getKeyCodeToControllerMapping().getKeyCodeToControlId()[e.code] !== undefined)*/
+      ) {
+        return;
+      }
+
+      this.onKeyboardEvent(e);
       const code = getKeyCode(e.code);
       if (code !== 0 && this.keyCount < this.maxKeys) {
         let key = this.keys[this.keyCount++];
-        // if (e.code === 'Escape') {
-        //   if (
-        //     this.escapeDownTime !== -1 &&
-        //     Date.now() - this.escapeDownTime < 1000
-        //   ) {
-        //     key[0] = code;
-        //     key[1] = 0;
-        //     key = this.keys[this.keyCount++];
-        //     key[0] = code;
-        //     key[1] = 1;
-        //   } else {
-        //     if (this.pause(true)) {
-        //       this.showPauseMenu();
-        //     }
-        //   }
-        //   this.escapeDownTime = -1;
-        //   return;
-        // }
         key[0] = code;
         key[1] = 0;
       }
     };
+
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement) {
+        this.showTouchOverlay(false);
+        this.app.forceRefresh();
+      } else {
+        this.updateOnScreenControls();
+      }
+    });
+
+    if (this.jsAudio) {
+      const START_DELAY = 5;
+      let started = 0;
+      this.audioCallback = (offset, length) => {
+        if (started === START_DELAY) {
+          if (!this.audioProcessor) {
+            started = 0;
+            return;
+          } else {
+            this.audioProcessor.start();
+          }
+        } else if (started < START_DELAY) {
+          started++;
+          return;
+        }
+        const audioArray = new Int16Array(window.Module.HEAP16.buffer, offset, 8192 * 4);
+        this.audioProcessor.storeSoundCombinedInput(
+          audioArray, 2, length << 1, 0, ((65535) | 0)
+        );
+      };
+    }
+  }
+
+  isDirectFileSupportedForArchives() {
+    return true;
+  }
+
+  // Allows extract path to be modified
+  getExtractPath(path) {
+    return path.toUpperCase();
+  }
+
+  sendKeyDown(c) {
+    const code = getKeyCode(c);
+    if (code !== 0) {
+      console.log('key down: ' + code)
+      window.Module._wrc_on_key(code, 1);
+    }
+  }
+
+  sendKeyUp(c) {
+    const code = getKeyCode(c);
+    if (code !== 0) {
+      console.log('key up: ' + code)
+      window.Module._wrc_on_key(code, 0);
+    }
+  }
+
+  createAudioProcessor() {
+    if (this.jsAudio) {
+      return new ScriptAudioProcessor(2, this.audioRate).setDebug(this.debug);
+    } else {
+      return super.createAudioProcessor();
+    }
+  }
+
+  isJsAudio() {
+    console.log("## JS AUDIO: " + this.jsAudio);
+    return this.jsAudio ? 1 : 0;
   }
 
   getMouseAbsX() {
+    if (this.disableInput) return 0;
     return this.mouseAbsX >> 0;
   }
 
   getMouseAbsY() {
+    if (this.disableInput) return 0;
     return this.mouseAbsY >> 0;
   }
 
   getExitOnLoopError() {
     return true;
+  }
+
+  getRaConfigContents() {
+    return (
+      "video_threaded = \"true\"\n" +
+      "video_vsync = \"false\"\n" +
+      "video_driver = \"256\"\n" +
+      "audio_latency = \"256\"\n" +
+      "audio_buffer_size = \"8192\"\n" +
+      "audio_sync = \"false\"\n" +
+      "audio_driver = \"sdl2\"\n"
+    )
   }
 
   setPointerLock(lock) {
@@ -191,12 +285,21 @@ export class Emulator extends RetroAppWrapper {
   }
 
   onPause(p) {
+    const { app } = this;
+    if (p) {
+      try {
+        app.setKeyboardShown(false);
+      } catch (e) {}
+    }
+
     if (p) {
       this.blockKeys = false;
     } else {
       this.blockKeys = true;
     }
     this.setPointerLock(!p && this.gameRunning);
+
+    super.onPause(p);
   }
 
   setGameRunning(running) {
@@ -205,26 +308,48 @@ export class Emulator extends RetroAppWrapper {
     this.setPointerLock(running);
   }
 
-  onShowQuakeMenu(show) {
-    // alert('show menu: ' + show);
-    this.analogMode = !show;
-  }
-
-
   createDisplayLoop(debug) {
-    return new DisplayLoop(60, false, debug, false, true);
+    // if (!this.vsync) {
+    //   // not vsync'd
+    //   return new DisplayLoop(100, false, debug, false, true);
+    // } else {
+    //   // vscync'd
+    //   // return super.createDisplayLoop(debug);
+      return new DisplayLoop(
+        60,    // frame rate (ignored due to no wait)
+        false,  // vsync
+        debug, // debug
+        false, // force native
+        false, // no wait
+      );
+    // }
   }
 
   onFrame() {
     if (this.firstFrame) {
-      const canvas = this.canvas;
       this.blockKeys = true;
       this.firstFrame = false;
 
+      // TODO: KEYBOARD!
+
       window.addEventListener("contextmenu", e => e.preventDefault());
+      setTimeout(() => {
+        const onTouch = () => { this.onTouchEvent() };
+        window.addEventListener("touchstart", onTouch);
+        window.addEventListener("touchend", onTouch);
+        window.addEventListener("touchcancel", onTouch);
+        window.addEventListener("touchmove", onTouch);
+
+        const onMouse = () => { this.onMouseEvent() };
+        window.addEventListener("mousedown", onMouse);
+        window.addEventListener("mouseup", onMouse);
+        window.addEventListener("mousemove", onMouse);
+
+        this.app.showCanvas();
+      }, 10);
     }
 
-    if (window.Module && window.Module._wrc_update_mouse) {
+    if (!this.disableInput && window.Module && window.Module._wrc_update_mouse) {
       window.Module._wrc_update_mouse(
         this.mouseX,
         this.mouseY,
@@ -267,99 +392,102 @@ export class Emulator extends RetroAppWrapper {
   }
 
   async saveState() {
-    // const { dirName } = this;
-    // const { FS } = window;
+    const { FS } = window;
+    try {
+      await this.fileTracker.syncToBackup(FS);
 
-    // try {
-    //   const saveName = `${dirName}.zip`;
-    //   const pathPrefix = this.savePathPrefix;
-    //   const files = [];
-    //   for (let i = -1; i < MAX_SAVES; i++) {
-    //     const fileName = i === -1 ? 'config.cfg' : `s${i}.sav`;
-    //     const path = `${pathPrefix}${fileName}`;
-    //     try {
-    //       const res = FS.analyzePath(path, true);
-    //       if (res.exists) {
-    //         const s = FS.readFile(path);
-    //         if (s) {
-    //           files.push({
-    //             name: fileName,
-    //             content: s,
-    //           });
-    //         }
-    //       }
-    //     } catch (e) {
-    //       LOG.error(e);
-    //     }
-    //   }
+      const saveName = this.SAVE_NAME;
+      const files = [];
 
-    //   const hasChanges = await this.getSaveManager().checkFilesChanged(files);
-    //   if (hasChanges) {
-    //     await this.getSaveManager().save(
-    //       `${this.saveStatePrefix}${saveName}`,
-    //       files,
-    //       this.saveMessageCallback,
-    //     );
-    //   }
-    // } catch (e) {
-    //   LOG.error('Error persisting save state: ' + e);
-    // }
+      files.push({
+        name: this.DELETED_PATH,
+        content: JSON.stringify(this.fileTracker.getDeletedPaths()),
+      });
+
+      const walkFiles = (path) => {
+        const dir = FS.readdir(path);
+        dir.forEach(entry => {
+            const fullPath = path + '/' + entry;
+            if (entry === '.' || entry === '..') return;
+            const stat = FS.stat(fullPath);
+            const isDirectory = (stat.mode & 0o40000) !== 0; // Check if it's a directory
+            const isFile = (stat.mode & 0o100000) !== 0; // Check if it's a regular file
+            if (isDirectory) {
+                // console.log('Directory:', fullPath);
+                walkFiles(fullPath); // Recurse into the directory
+            } else if (isFile) {
+                // console.log('File:', fullPath);
+                const s = FS.readFile(fullPath);
+                if (s) {
+                  files.push({
+                    name: fullPath,
+                    content: s,
+                  });
+                }
+            }
+        });
+      }
+      walkFiles(this.fileTracker.BACKUP_DIR);
+
+      const hasChanges = await this.getSaveManager().checkFilesChanged(files);
+      if (hasChanges) {
+        await this.getSaveManager().save(
+          `${this.saveStatePrefix}${saveName}`,
+          files,
+          this.saveMessageCallback,
+        );
+      }
+    } catch (e) {
+      LOG.error('Error persisting save state: ' + e);
+    }
   }
 
   async loadState() {
     const { FS } = window;
 
-    if (this.binaryFileName) {
+    // Create the backup directory
+    FS.mkdir(this.fileTracker.BACKUP_DIR);
+
+    try {
+      const saveName = this.SAVE_NAME;
+
+      // Load from new save format
+      const files = await this.getSaveManager().load(
+        `${this.saveStatePrefix}${saveName}`,
+        this.loadMessageCallback,
+      );
+
+      // Cache file hashes
+      await this.getSaveManager().checkFilesChanged(files);
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.name === this.DELETED_PATH) {
+          const content = JSON.parse(new TextDecoder('utf-8').decode(file.content));
+          this.fileTracker.setDeletedPaths(content);
+        } else {
+          const outPath = file.name;
+          const destDir = outPath.substring(0, outPath.lastIndexOf('/'));
+          this.fileTracker.createDirectories(FS, destDir);
+          FS.writeFile(file.name, file.content);
+        }
+      }
+
+      await this.fileTracker.syncFromBackup(FS);
+    } catch (e) {
+      LOG.error('Error loading save state: ' + e);
+    }
+
+    const autoStartPath = this.getProps().autoStartPath;
+    if (this.binaryFileName || autoStartPath) {
       // Remove "/content", convert slashes, and make upper case
-      const path = `C:${this.binaryFileName.replace(/\//g, '\\').substring(8).toUpperCase()}`;
+      const path = this.binaryFileName ?
+        `C:${this.binaryFileName.replace(/\//g, '\\').substring(8).toUpperCase()}` :
+        autoStartPath;
 
       console.log("AUTOBOOT: " + path);
       FS.writeFile("/content/AUTOBOOT.DBP", path, { encoding: 'utf8' });
     }
-
-    // const { dirName } = this;
-    // const { FS } = window;
-
-    // try {
-    //   const saveName = `${dirName}.zip`;
-
-    //   // Load from new save format
-    //   const files = await this.getSaveManager().load(
-    //     `${this.saveStatePrefix}${saveName}`,
-    //     this.loadMessageCallback,
-    //   );
-
-    //   // Cache file hashes
-    //   await this.getSaveManager().checkFilesChanged(files);
-
-    //   const pathPrefix = this.savePathPrefix;
-    //   FS.mkdir(pathPrefix.substring(0, pathPrefix.length - 1));
-
-    //   for (let i = -1; i < MAX_SAVES; i++) {
-    //     const fileName = i === -1 ? 'config.cfg' : `s${i}.sav`;
-    //     const path = `${pathPrefix}${fileName}`;
-    //     try {
-    //       const res = FS.analyzePath(path, true);
-    //       if (!res.exists) {
-    //         let s = null;
-    //         for (let j = 0; j < files.length; j++) {
-    //           const f = files[j];
-    //           if (f.name === fileName) {
-    //             s = f.content;
-    //             break;
-    //           }
-    //         }
-    //         if (s) {
-    //           FS.writeFile(path, s);
-    //         }
-    //       }
-    //     } catch (e) {
-    //       LOG.error(e);
-    //     }
-    //   }
-    // } catch (e) {
-    //   LOG.error('Error loading save state: ' + e);
-    // }
   }
 
   applyGameSettings() {}
@@ -367,160 +495,18 @@ export class Emulator extends RetroAppWrapper {
   onArchiveFile(isDir, name, stats) {
     const autoStartPath = this.getProps().autoStartPath;
     const lowerName = name.toLowerCase();
-console.log(name);
     if (autoStartPath &&
         autoStartPath.length > 0 &&
         lowerName.indexOf(autoStartPath.toLowerCase().trim()) !== -1) {
       this.binaryFileName = name;
     }
-
-    // // const { paks } = this;
-    // const lowerName = name.toLowerCase();
-
-    // if (lowerName.endsWith('.pak')) {
-    //   const parts = name.split('/');
-    //   if (parts.length >= 2) {
-    //     const pak = parts[parts.length - 1];
-    //     const path = parts[parts.length - 2];
-    //     let p = paks[path];
-    //     if (!p) {
-    //       paks[path] = [];
-    //     }
-    //     paks[path].push([pak, name]);
-    //   }
-    // }
   }
 
-  // findPak(findPath) {
-  //   const { paks } = this;
-  //   const findPathLower = findPath.toLowerCase();
-  //   for (let p in paks) {
-  //     const pathPaks = paks[p];
-  //     for (let i = 0; i < pathPaks.length; i++) {
-  //       const pakInfo = pathPaks[i];
-  //       // const pak = pakInfo[0];
-  //       const fullPath = pakInfo[1];
-  //       if (fullPath.toLowerCase().includes(findPathLower)) {
-  //         return p;
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // }
-
-  // getMainPakFile(name) {
-  //   const pakFiles = this.paks[name];
-  //   pakFiles.sort((a, b) => {
-  //     const paka = a[0].toLowerCase();
-  //     const pakb = b[0].toLowerCase();
-  //     if (paka < pakb) {
-  //       return 1;
-  //     }
-  //     if (paka > pakb) {
-  //       return -1;
-  //     }
-  //     return 0;
-  //   });
-  //   return pakFiles[0][1];
-  // }
-
-  onArchiveFilesFinished() {
-
-console.log("ARCHIVE FILES FINISHED")
-
-    const throwError = (path) => {
-      throw Error(`Unable to find '${path}' in archive.`);
-    };
-
-    // const getMainFor = (path) => {
-    //   const name = this.findPak(path);
-    //   if (!name) throwError(path);
-    //   this.binaryFileName = this.getMainPakFile(name);
-    //   this.dirName = name;
-    //   this.savePathPrefix = `/home/web_user/retroarch/userdata/saves/${name}/`;
-    // };
-
-    // const t = this.wadType;
-    // if (!this.findPak(QUAKE_FULL_SHAREWARE_PATH)) {
-    //   throwError(QUAKE_FULL_SHAREWARE_PATH);
-    // }
-    // if (t !== QUAKE && t !== AUTO) {
-    //   if (!this.findPak(QUAKE_FULL_PATH)) {
-    //     throwError(QUAKE_FULL_PATH);
-    //   }
-    // }
-
-    // switch (t) {
-    //   case QUAKE:
-    //     getMainFor(QUAKE_PATH);
-    //     break;
-    //   case SCOURGE:
-    //     getMainFor(SCOURGE_PATH);
-    //     break;
-    //   case DISSOLUTION:
-    //     getMainFor(DISSOLUTION_PATH);
-    //     break;
-    //   case DOPA:
-    //     getMainFor(DOPA_PATH);
-    //     break;
-    //   case CUSTOM:
-    //     const path = this.wadPath;
-    //     if (path.length === 0) {
-    //       throw Error('A custom game path was not provided.');
-    //     }
-    //     getMainFor(path);
-    //     break;
-    //   case AUTO:
-    //     const { paks } = this;
-    //     let found = false;
-    //     if (Object.keys(paks).length === 2) {
-    //       for (let p in paks) {
-    //         if (p.toLowerCase() === 'id1') {
-    //           continue;
-    //         }
-    //         getMainFor(p);
-    //         found = true;
-    //         break;
-    //       }
-    //     }
-    //     if (!found) {
-    //       getMainFor(QUAKE_PATH);
-    //     }
-    //     break;
-    //   default:
-    // }
-  }
+  onArchiveFilesFinished() {}
 
   getArchiveBinaryFileName() {
     return "/content/";
   }
-
-  // resizeScreen(canvas) {
-  //   // Determine the zoom level
-  //   let zoomLevel = 0;
-  //   if (this.getProps().zoomLevel) {
-  //     zoomLevel = this.getProps().zoomLevel;
-  //   }
-
-  //   const wsize = 96 + zoomLevel;
-  //   const hsize = 96 + zoomLevel;
-  //   canvas.style.setProperty('width', `${wsize}vw`, 'important');
-  //   canvas.style.setProperty('height', `${hsize}vh`, 'important');
-  //   canvas.style.setProperty(
-  //     'max-width',
-  //     `calc(${hsize}vh*1.333)`,
-  //     'important',
-  //   );
-  //   canvas.style.setProperty(
-  //     'max-height',
-  //     `calc(${wsize}vw*0.75)`,
-  //     'important',
-  //   );
-  // }
-
-  // getShotAspectRatio() {
-  //   return 1.333;
-  // }
 
   isForceAspectRatio() {
     return false;
@@ -532,18 +518,76 @@ console.log("ARCHIVE FILES FINISHED")
 
   resizeScreen(canvas) {
     this.canvas = canvas;
-    // // Determine the zoom level
-    // let zoomLevel = 0;
-    // if (this.getProps().zoomLevel) {
-    //   zoomLevel = this.getProps().zoomLevel;
-    // }
-
-    // const size = 96 + zoomLevel;
-    // canvas.style.setProperty('width', `${size}vw`, 'important');
-    // canvas.style.setProperty('height', `${size}vh`, 'important');
-    // canvas.style.setProperty('max-width', `calc(${size}vh*1.22)`, 'important');
-    // canvas.style.setProperty('max-height', `calc(${size}vw*0.82)`, 'important');
     this.updateScreenSize();
+  }
+
+  toggleKeyboard() {
+    const { app } = this;
+
+    const show = !app.isKeyboardShown();
+    this.disableInput = show ? true : false;
+    app.setKeyboardShown(show);
+  }
+
+  showTouchOverlay(show) {
+    const to = document.getElementById("touch-overlay");
+    if (to) {
+      to.style.display = show ? 'block' : 'none';
+    }
+  }
+
+  checkOnScreenControls() {
+    const controls = this.prefs.getScreenControls();
+    if (controls === SCREEN_CONTROLS.SC_AUTO) {
+      setTimeout(() => {
+        this.showTouchOverlay(true);
+        this.app.forceRefresh();
+      }, 0);
+    }
+  }
+
+  onKeyboardEvent(e) {
+    if (e.code && !this.keyboardEvent) {
+      this.keyboardEvent = true;
+      this.checkOnScreenControls();
+    }
+  }
+
+  onTouchEvent() {
+    if (!this.touchEvent) {
+      this.touchEvent = true;
+      this.checkOnScreenControls();
+    }
+  }
+
+  onMouseEvent() {
+    if (!this.mouseEvent) {
+      this.mouseEvent = true;
+      this.checkOnScreenControls();
+    }
+
+    this.mouseEventCount++;
+  }
+
+  updateOnScreenControls(initial = false) {
+    const controls = this.prefs.getScreenControls();
+    if (controls === SCREEN_CONTROLS.SC_OFF) {
+      this.showTouchOverlay(false);
+    } else if (controls === SCREEN_CONTROLS.SC_ON) {
+      this.showTouchOverlay(true);
+    } else if (controls === SCREEN_CONTROLS.SC_AUTO) {
+      if (!initial) {
+        setTimeout(() => {
+          this.showTouchOverlay(this.touchEvent || this.mouseEvent);
+          this.app.forceRefresh();
+        }, 0);
+      }
+    }
+  }
+
+  updateVkTransparency() {
+    const value = this.prefs.getVkTransparency();
+    this.app.setKeyboardTransparency(value);
   }
 
   getShotAspectRatio() { return this.getDefaultAspectRatio(); }
@@ -551,6 +595,8 @@ console.log("ARCHIVE FILES FINISHED")
 
 const getKeyCode = (k) => {
   switch (k) {
+    case 'Quote':
+      return 39; //K_QUOTE = 39, TODO: Add this to Quake
     case 'Backspace':
       return 8; //K_BACKSPACE = 8,
     case 'Tab':
@@ -727,11 +773,28 @@ const getKeyCode = (k) => {
       return 309; //K_RMETA = 309,
     case 'MetaLeft':
       return 310; //K_LMETA = 310,
+    case 'NumLock':
+      return 300; //K_NUMLOCK = 300,
+    case 'KeypadPeriod':
+      return 266;  //  K_KP_PERIOD = 266,
+    case 'KeypadMultiply':
+      return 268;  //  K_KP_MULTIPLY = 268,
+    case 'KeypadDivide':
+      return 267;  //  K_KP_DIVIDE = 267,
+    case 'KeypadMinus':
+      return 269;  // K_KP_MINUS = 269,
+    case 'KeypadPlus':
+      return 270;  //  K_KP_PLUS = 270,
+    case 'KeypadEnter':
+      return 271;  //  K_KP_ENTER = 271,
+    case 'Print':
+      return 316; // K_PRINT = 316,
     default:
   }
   return 0;
 };
 
+//K_KP_EQUALS = 272,
 //K_EXCLAIM = 33,
 //K_QUOTEDBL = 34,
 //K_HASH = 35,
@@ -752,7 +815,6 @@ const getKeyCode = (k) => {
 // K_UNDERSCORE = 95,
 // K_BRACELEFT = 123,
 // K_BRACERIGHT = 125,
-
 //  /* Numeric keypad */
 //  K_KP0 = 256,
 //  K_KP1 = 257,

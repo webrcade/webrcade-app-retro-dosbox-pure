@@ -2,16 +2,19 @@ import React from 'react';
 import { Component } from 'react';
 
 import { GamepadControlsTab, KeyboardControlsTab } from './controls';
+import { DosBoxSettingsEditor } from './settings';
 
 import {
-  AppSettingsEditor,
   CustomPauseScreen,
   EditorScreen,
   GamepadWhiteImage,
   KeyboardWhiteImage,
   PauseScreenButton,
   Resources,
+  SaveStatesEditor,
+  SaveWhiteImage,
   SettingsAppWhiteImage,
+  SnesBackground,
   TEXT_IDS,
 } from '@webrcade/app-common';
 
@@ -20,34 +23,45 @@ export class EmulatorPauseScreen extends Component {
     super();
     this.state = {
       mode: this.ModeEnum.PAUSE,
+      cloudEnabled: false,
+      loaded: false
     };
   }
 
   ModeEnum = {
     PAUSE: 'pause',
     CONTROLS: 'controls',
-    QUAKE_SETTINGS: 'quake-settings',
+    SETTINGS: 'settings',
+    STATE: 'state',
   };
 
-  ADDITIONAL_BUTTON_REFS = [
-    React.createRef(),
-    React.createRef(),
-    React.createRef(),
-  ];
+  ADDITIONAL_BUTTON_REFS = [React.createRef(), React.createRef(), React.createRef()];
 
-  componentDidMount() {}
+  componentDidMount() {
+    const { loaded } = this.state;
+    const { emulator } = this.props;
+
+    if (!loaded) {
+      let cloudEnabled = false;
+      emulator.getSaveManager().isCloudEnabled()
+        .then(c => { cloudEnabled = c; })
+        .finally(() => {
+          this.setState({
+            loaded: true,
+            cloudEnabled: cloudEnabled
+          });
+        })
+    }
+  }
 
   render() {
     const { ADDITIONAL_BUTTON_REFS, ModeEnum } = this;
-    const {
-      appProps,
-      closeCallback,
-      emulator,
-      exitCallback,
-      isEditor,
-      isStandalone,
-    } = this.props;
-    const { mode } = this.state;
+    const { appProps, closeCallback, emulator, exitCallback, isEditor, isStandalone } = this.props;
+    const { cloudEnabled, loaded, mode } = this.state;
+
+    if (!loaded) {
+      return null;
+    }
 
     const additionalButtons = [
       <PauseScreenButton
@@ -61,26 +75,34 @@ export class EmulatorPauseScreen extends Component {
           this.setState({ mode: ModeEnum.CONTROLS });
         }}
       />,
-    ];
-
-    additionalButtons.push(
       <PauseScreenButton
         imgSrc={SettingsAppWhiteImage}
         buttonRef={ADDITIONAL_BUTTON_REFS[1]}
-        label="Quake Settings"
+        label="DOS Settings"
         onHandlePad={(focusGrid, e) =>
           focusGrid.moveFocus(e.type, ADDITIONAL_BUTTON_REFS[1])
         }
         onClick={() => {
-          this.setState({ mode: ModeEnum.QUAKE_SETTINGS });
+          this.setState({ mode: ModeEnum.SETTINGS });
         }}
       />,
-    );
+    ];
 
-    const gamepad = <GamepadControlsTab />;
-    const keyboard = <KeyboardControlsTab />;
-    const gamepadLabel = Resources.getText(TEXT_IDS.GAMEPAD_CONTROLS);
-    const keyboardLabel = Resources.getText(TEXT_IDS.KEYBOARD_CONTROLS);
+    if (cloudEnabled) {
+      additionalButtons.push(
+        <PauseScreenButton
+          imgSrc={SaveWhiteImage}
+          buttonRef={ADDITIONAL_BUTTON_REFS[2]}
+          label={Resources.getText(TEXT_IDS.SAVE_STATES)}
+          onHandlePad={(focusGrid, e) =>
+            focusGrid.moveFocus(e.type, ADDITIONAL_BUTTON_REFS[2])
+          }
+          onClick={() => {
+            this.setState({ mode: ModeEnum.STATE });
+          }}
+        />
+      );
+    }
 
     return (
       <>
@@ -101,20 +123,31 @@ export class EmulatorPauseScreen extends Component {
             tabs={[
               {
                 image: GamepadWhiteImage,
-                label: gamepadLabel,
-                content: gamepad,
+                label: Resources.getText(TEXT_IDS.GAMEPAD_CONTROLS),
+                content: <GamepadControlsTab />,
               },
               {
                 image: KeyboardWhiteImage,
-                label: keyboardLabel,
-                content: keyboard,
+                label: Resources.getText(TEXT_IDS.KEYBOARD_CONTROLS),
+                content: <KeyboardControlsTab />,
               },
             ]}
           />
         ) : null}
-
-        {mode === ModeEnum.QUAKE_SETTINGS ? (
-          <AppSettingsEditor emulator={emulator} onClose={closeCallback} />
+        {mode === ModeEnum.SETTINGS ? (
+          <DosBoxSettingsEditor
+            emulator={emulator}
+            showOnScreenControls={true}
+            onClose={closeCallback}
+          />
+        ) : null}
+        {mode === ModeEnum.STATE ? (
+          <SaveStatesEditor
+            emptyImageSrc={SnesBackground}
+            emulator={emulator}
+            onClose={closeCallback}
+            showStatusCallback={emulator.saveMessageCallback}
+          />
         ) : null}
       </>
     );
