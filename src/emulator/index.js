@@ -44,6 +44,7 @@ export class Emulator extends RetroAppWrapper {
     this.fileTracker = new FileTracker(this);
     this.touchStartTime = 0;
     this.vkbPending = false;
+    this.vkPendingStart = 0;
 
     this.setStateFilePath("/home/web_user/retroarch/userdata/states/.state");
 
@@ -300,11 +301,22 @@ export class Emulator extends RetroAppWrapper {
     if (controllers.isControlDown(0, CIDS.LTRIG) && controllers.isControlDown(0, CIDS.RANALOG)) {
       if (!this.vkbPending) {
         this.vkbPending = true;
+        this.vkPendingStart = Date.now();
         controllers
         .waitUntilControlReleased(0 /*i*/, CIDS.ESCAPE)
           .then(() => {
-            this.toggleKeyboard();
             this.vkbPending = false;
+            // Long hold allows for switching gamepad modes
+            if ((Date.now() - this.vkPendingStart) > 1000) {
+              this.prefs.setGamepadMode(
+                this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
+                  GAMEPAD_MODE.MOUSE : GAMEPAD_MODE.GAMEPAD);
+              this.showMessage(this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
+                "Switched to Gamepad Mode" : "Switched to Mouse Mode"
+              )
+            } else {
+              this.toggleKeyboard();
+            }
           });
       }
       return true;
