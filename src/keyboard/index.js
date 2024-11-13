@@ -213,7 +213,7 @@ export class Keyboard extends Component {
     }
 
     const onClick = (e, key) => {
-      e.stopPropagation();
+      if (e?.stopPropagation) e.stopPropagation();
       key.onClick(this, this.state.keysContext)
       try {
         const button = key.getRef().current.button;

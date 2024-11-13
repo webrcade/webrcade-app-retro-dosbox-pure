@@ -5,11 +5,12 @@ import {
   RetroAppWrapper,
   ScriptAudioProcessor,
   DisplayLoop,
+  CIDS,
   SCREEN_CONTROLS,
   LOG,
 } from '@webrcade/app-common';
 
-import { Prefs } from './prefs';
+import { GAMEPAD_MODE, Prefs } from './prefs';
 import { FileTracker } from './files';
 
 class QuakeKeyCodeToControlMapping extends KeyCodeToControlMapping {
@@ -41,6 +42,8 @@ export class Emulator extends RetroAppWrapper {
     this.prefs = new Prefs(this);
     this.audioProcessor = this.createAudioProcessor();
     this.fileTracker = new FileTracker(this);
+    this.touchStartTime = 0;
+    this.vkbPending = false;
 
     this.setStateFilePath("/home/web_user/retroarch/userdata/states/.state");
 
@@ -66,6 +69,7 @@ export class Emulator extends RetroAppWrapper {
     }
 
     this.pointerLockHandler = async () => {
+      if ((Date.now() - this.touchStartTime) < 500) return;
       if (!document.pointerLockElement && !this.app.isKeyboardShown()) {
         await this.canvas.requestPointerLock();
       }
@@ -209,6 +213,105 @@ export class Emulator extends RetroAppWrapper {
     }
   }
 
+  isGamepadMouse() {
+    return this.prefs.getGamepadMode() === GAMEPAD_MODE.MOUSE;
+  }
+
+  updateMouseFromGamepad() {
+    const { canvas, controllers } = this;
+
+    if (!canvas || !controllers) return 0;
+
+    // Sensitivity factor for analog stick movement
+    let sensitivity = .4; // Adjust this value to change sensitivity
+
+    // Dead zone threshold
+    let deadZone = 0.15; // This value can be adjusted (0.1 means 10% of the stick's range)
+
+    // Variables for absolute position (starting at the center of the canvas)
+    const rect = canvas.getBoundingClientRect();
+
+    let absoluteX = this.absoluteX !== undefined ? this.absoluteX : rect.width / 2;
+    let absoluteY = this.absoluteY !== undefined ? this.absoluteY : rect.height / 2;
+    // let relativeX = this.relativeX !== undefined ? this.relativeX : 0; // Relative X movement
+    // let relativeY = this.relativeY !== undefined ? this.relativeY : 0; // Relative Y movement
+    let relativeX = 0;
+    let relativeY = 0;
+
+    const gamepads = navigator.getGamepads();
+    if (gamepads.length <= 0) return 0;
+
+    const gamepad = gamepads[0];
+    if (!gamepad || gamepad.axes.length < 2) return 0;
+
+    // Get the analog stick values (ranging from -1 to 1)
+    let stickX = gamepad.axes[0]; // X-axis (left-right)
+    let stickY = gamepad.axes[1]; // Y-axis (up-down)
+
+    // Check if the movement is within the dead zone
+    if (Math.abs(stickX) < deadZone) stickX = 0;
+    if (Math.abs(stickY) < deadZone) stickY = 0;
+
+    if (stickX !== 0 || stickY !== 0) {
+      if (stickX !== 0) {
+        stickX = stickX > 0 ? stickX - deadZone : stickX + deadZone;
+      }
+      if (stickY !== 0) {
+        stickY = stickY > 0 ? stickY - deadZone : stickY + deadZone;
+      }
+
+      // Apply sensitivity by multiplying the stick values
+      stickX *= sensitivity;
+      stickY *= sensitivity;
+
+      // Calculate relative movement (difference from the previous position)
+      relativeX = stickX;
+      relativeY = stickY;
+
+      // Update the absolute position by incrementing it with relative movement
+      absoluteX += relativeX * rect.width / 20; // Scale the relative movement
+      absoluteY += relativeY * rect.height / 20; // Scale the relative movement
+
+      // Clamp the absolute position to stay within the canvas bounds
+      absoluteX = Math.max(0, Math.min(absoluteX, rect.width));
+      absoluteY = Math.max(0, Math.min(absoluteY, rect.height));
+
+      let x = ((absoluteX / rect.width) - .5) * 32767 * 2;
+      let y = ((absoluteY / rect.height) - .5) * 32767 * 2;
+
+      this.absoluteX = absoluteX;
+      this.absoluteY = absoluteY;
+      // this.relativeX = relativeX;
+      // this.relativeY = relativeY;
+
+      this.mouseX += relativeX * 25 | 0;
+      this.mouseY += relativeY * 25 | 0;
+      this.mouseAbsX = x;
+      this.mouseAbsY = y;
+    }
+
+    return (
+      (controllers.isControlDown(0, CIDS.A) || controllers.isControlDown(0, CIDS.LBUMP) ? this.MOUSE_LEFT : 0) |
+      (controllers.isControlDown(0, CIDS.B) || controllers.isControlDown(0, CIDS.RBUMP) ? this.MOUSE_RIGHT : 0) |
+      (controllers.isControlDown(0, CIDS.X) ? this.MOUSE_MIDDLE : 0))
+  }
+
+  handleEscape(controllers) {
+    if (controllers.isControlDown(0, CIDS.LTRIG) && controllers.isControlDown(0, CIDS.RANALOG)) {
+      if (!this.vkbPending) {
+        this.vkbPending = true;
+        controllers
+        .waitUntilControlReleased(0 /*i*/, CIDS.ESCAPE)
+          .then(() => {
+            this.toggleKeyboard();
+            this.vkbPending = false;
+          });
+      }
+      return true;
+    }
+    return false;
+  }
+
   isDirectFileSupportedForArchives() {
     return true;
   }
@@ -216,6 +319,10 @@ export class Emulator extends RetroAppWrapper {
   // Allows extract path to be modified
   getExtractPath(path) {
     return path.toUpperCase();
+  }
+
+  getDisableInput() {
+    return super.getDisableInput() || this.isGamepadMouse();
   }
 
   sendKeyDown(c) {
@@ -288,6 +395,7 @@ export class Emulator extends RetroAppWrapper {
     const { app } = this;
     if (p) {
       try {
+        this.setDisableInput(false);
         app.setKeyboardShown(false);
       } catch (e) {}
     }
@@ -335,8 +443,14 @@ export class Emulator extends RetroAppWrapper {
       window.addEventListener("contextmenu", e => e.preventDefault());
       setTimeout(() => {
         const onTouch = () => { this.onTouchEvent() };
-        window.addEventListener("touchstart", onTouch);
-        window.addEventListener("touchend", onTouch);
+        window.addEventListener("touchstart", () => {
+          this.touchStartTime = Date.now();
+          onTouch();
+        });
+        window.addEventListener("touchend", () => {
+          this.touchStartTime = Date.now();
+          onTouch();
+        });
         window.addEventListener("touchcancel", onTouch);
         window.addEventListener("touchmove", onTouch);
 
@@ -350,11 +464,16 @@ export class Emulator extends RetroAppWrapper {
     }
 
     if (!this.disableInput && window.Module && window.Module._wrc_update_mouse) {
+      let gamepadMouseButtons = 0;
+      if (this.isGamepadMouse()) {
+        gamepadMouseButtons = this.updateMouseFromGamepad();
+      }
+
       window.Module._wrc_update_mouse(
         this.mouseX,
         this.mouseY,
         //document.pointerLockElement ? this.mouseButtons : 0,
-        this.mouseButtons
+        this.mouseButtons | gamepadMouseButtons
       );
     }
 
@@ -377,6 +496,8 @@ export class Emulator extends RetroAppWrapper {
       new Controller(),
     ]);
   }
+
+  createTouchListener() {}
 
   getScriptUrl() {
     return 'js/dosbox_pure_libretro.js';
@@ -490,6 +611,10 @@ export class Emulator extends RetroAppWrapper {
     }
   }
 
+  isForceMenu() {
+    return this.prefs.getForceStartMenu();
+  }
+
   applyGameSettings() {}
 
   onArchiveFile(isDir, name, stats) {
@@ -523,9 +648,8 @@ export class Emulator extends RetroAppWrapper {
 
   toggleKeyboard() {
     const { app } = this;
-
     const show = !app.isKeyboardShown();
-    this.disableInput = show ? true : false;
+    this.setDisableInput(show ? true : false);
     app.setKeyboardShown(show);
   }
 
