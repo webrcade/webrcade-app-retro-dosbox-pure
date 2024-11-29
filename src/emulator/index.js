@@ -12,6 +12,8 @@ import {
 
 import { GAMEPAD_MODE, Prefs } from './prefs';
 import { FileTracker } from './files';
+import { ControlsInfo } from './controlsinfo';
+import { Touch } from './touch';
 
 class QuakeKeyCodeToControlMapping extends KeyCodeToControlMapping {
   constructor() {
@@ -38,13 +40,21 @@ export class Emulator extends RetroAppWrapper {
     this.escapeDownTime = -1;
     this.blockKeys = false;
     this.gameRunning = false;
-    this.jsAudio = true;
+    this.jsAudio = false;
     this.prefs = new Prefs(this);
     this.audioProcessor = this.createAudioProcessor();
     this.fileTracker = new FileTracker(this);
     this.touchStartTime = 0;
     this.vkbPending = false;
     this.vkPendingStart = 0;
+    this.controlsInfo = new ControlsInfo(this);
+    this.mapTitle = null;
+    this.resWidth = 640;
+    this.resHeight = 480;
+    this.gamepadMouseAdjust = 0;
+    this.gamepadMouseX = 0;
+    this.gamepadMouseY = 0;
+    this.touchClick = 0;
 
     this.setStateFilePath("/home/web_user/retroarch/userdata/states/.state");
 
@@ -214,6 +224,48 @@ export class Emulator extends RetroAppWrapper {
     }
   }
 
+  onControlsInfo(info) {
+    this.controlsInfo.addInfo(info);
+  }
+
+  onResolutionChange(w, h) {
+    console.log("### RESOLUTION CHANGE: " + w + ", " + h)
+    this.resWidth = w;
+    this.resHeight = h;
+  }
+
+  CUSTOM_MAPPINGS = {
+    "Wolfenstein 3D": "AA8ANgE1AjEDNAQDBQMGTAkxCgILOAw7DQQPARBTVhFUVQ==",
+    "Shadow Warrior": "ABMAFUE1GAIxAzQEMgU0BkMHRAgeCTMKRgvMDDoNBg8BEEhHEVRVElNWE05R"
+  }
+
+ async onMapTitle(title) {
+    const { FS } = window;
+
+    console.log("### Title: " + title);
+    this.mapTitle = title;
+    if (!this.mapTitle) return;
+
+    try {
+      const result = FS.analyzePath("/content/PADMAP.DBP");
+      if (!result.exists) {
+        const title = this.mapTitle.substring(6).trim();
+        const b64 = this.CUSTOM_MAPPINGS[title]
+        if (b64) {
+          const binaryString = atob(b64);
+          const length = binaryString.length;
+          const uint8Array = new Uint8Array(length);
+          for (let i = 0; i < length; i++) {
+              uint8Array[i] = binaryString.charCodeAt(i);
+          }
+          FS.writeFile("/content/PADMAP.DBP", uint8Array);
+        }
+      }
+    } catch (e) {
+      console.log(e)
+    }
+  }
+
   isGamepadMouse() {
     return this.prefs.getGamepadMode() === GAMEPAD_MODE.MOUSE;
   }
@@ -269,9 +321,11 @@ export class Emulator extends RetroAppWrapper {
       relativeX = stickX;
       relativeY = stickY;
 
+      const slow = controllers.isControlDown(0, CIDS.RBUMP);
+
       // Update the absolute position by incrementing it with relative movement
-      absoluteX += relativeX * rect.width / 20; // Scale the relative movement
-      absoluteY += relativeY * rect.height / 20; // Scale the relative movement
+      absoluteX += relativeX * rect.width / (slow ? 80 : 20); // Scale the relative movement
+      absoluteY += relativeY * rect.height / (slow ? 80 : 20); // Scale the relative movement
 
       // Clamp the absolute position to stay within the canvas bounds
       absoluteX = Math.max(0, Math.min(absoluteX, rect.width));
@@ -285,15 +339,17 @@ export class Emulator extends RetroAppWrapper {
       // this.relativeX = relativeX;
       // this.relativeY = relativeY;
 
-      this.mouseX += relativeX * 25 | 0;
-      this.mouseY += relativeY * 25 | 0;
+
+      this.gamepadMouseAdjust = slow ? 10 : 40;
+      this.gamepadMouseX += relativeX;
+      this.gamepadMouseY += relativeY;
       this.mouseAbsX = x;
       this.mouseAbsY = y;
     }
 
     return (
-      (controllers.isControlDown(0, CIDS.A) || controllers.isControlDown(0, CIDS.LBUMP) ? this.MOUSE_LEFT : 0) |
-      (controllers.isControlDown(0, CIDS.B) || controllers.isControlDown(0, CIDS.RBUMP) ? this.MOUSE_RIGHT : 0) |
+      (controllers.isControlDown(0, CIDS.A) /*|| controllers.isControlDown(0, CIDS.LBUMP)*/ ? this.MOUSE_LEFT : 0) |
+      (controllers.isControlDown(0, CIDS.B) /*|| controllers.isControlDown(0, CIDS.RBUMP)*/ ? this.MOUSE_RIGHT : 0) |
       (controllers.isControlDown(0, CIDS.X) ? this.MOUSE_MIDDLE : 0))
   }
 
@@ -302,19 +358,25 @@ export class Emulator extends RetroAppWrapper {
       if (!this.vkbPending) {
         this.vkbPending = true;
         this.vkPendingStart = Date.now();
+        const start = this.vkPendingStart;
+        setTimeout(() => {
+          if (start === this.vkPendingStart) {
+            this.vkPendingStart = 0;
+            // Long hold allows for switching gamepad modes
+            this.prefs.setGamepadMode(
+              this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
+                GAMEPAD_MODE.MOUSE : GAMEPAD_MODE.GAMEPAD);
+            this.showMessage(this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
+              "Switched to Gamepad Mode" : "Switched to Mouse Mode"
+            )
+        }}, 1000);
+
         controllers
         .waitUntilControlReleased(0 /*i*/, CIDS.ESCAPE)
           .then(() => {
             this.vkbPending = false;
-            // Long hold allows for switching gamepad modes
-            if ((Date.now() - this.vkPendingStart) > 1000) {
-              this.prefs.setGamepadMode(
-                this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
-                  GAMEPAD_MODE.MOUSE : GAMEPAD_MODE.GAMEPAD);
-              this.showMessage(this.prefs.getGamepadMode() === GAMEPAD_MODE.GAMEPAD ?
-                "Switched to Gamepad Mode" : "Switched to Mouse Mode"
-              )
-            } else {
+            if (this.vkPendingStart !== 0) {
+              this.vkPendingStart = 0;
               this.toggleKeyboard();
             }
           });
@@ -355,7 +417,8 @@ export class Emulator extends RetroAppWrapper {
 
   createAudioProcessor() {
     if (this.jsAudio) {
-      return new ScriptAudioProcessor(2, this.audioRate).setDebug(this.debug);
+      return new ScriptAudioProcessor(2, this.audioRate, /*8192, 1024*/
+      ).setDebug(this.debug);
     } else {
       return super.createAudioProcessor();
     }
@@ -385,7 +448,7 @@ export class Emulator extends RetroAppWrapper {
       "video_threaded = \"true\"\n" +
       "video_vsync = \"false\"\n" +
       "video_driver = \"256\"\n" +
-      "audio_latency = \"256\"\n" +
+      "audio_latency = \"192\"\n" +
       "audio_buffer_size = \"8192\"\n" +
       "audio_sync = \"false\"\n" +
       "audio_driver = \"sdl2\"\n"
@@ -393,6 +456,7 @@ export class Emulator extends RetroAppWrapper {
   }
 
   setPointerLock(lock) {
+    if (!this.canvas) return;
     if (lock) {
       this.canvas.addEventListener('click', this.pointerLockHandler);
     } else {
@@ -405,6 +469,9 @@ export class Emulator extends RetroAppWrapper {
 
   onPause(p) {
     const { app } = this;
+    if (this.touch) {
+      this.touch.setTouchEnabled(!p)
+    }
     if (p) {
       try {
         this.setDisableInput(false);
@@ -449,10 +516,22 @@ export class Emulator extends RetroAppWrapper {
     if (this.firstFrame) {
       this.blockKeys = true;
       this.firstFrame = false;
+      this.touch = new Touch(this, this.canvas);
 
-      // TODO: KEYBOARD!
-
+      this.canvas.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+      });
+      document.getElementById("background").addEventListener("touchstart", (e) => {
+          e.preventDefault();
+        });
+      // document.body.addEventListener("touchstart", (e) => {
+      //   e.preventDefault();
+      // });
+      // window.addEventListener("touchstart", (e) => {
+      //   e.preventDefault();
+      // });
       window.addEventListener("contextmenu", e => e.preventDefault());
+      document.body.addEventListener("contextmenu", e => e.preventDefault());
       setTimeout(() => {
         const onTouch = () => { this.onTouchEvent() };
         window.addEventListener("touchstart", () => {
@@ -472,6 +551,7 @@ export class Emulator extends RetroAppWrapper {
         window.addEventListener("mousemove", onMouse);
 
         this.app.showCanvas();
+        console.log(this.controlsInfo.parseInfo());
       }, 10);
     }
 
@@ -479,13 +559,14 @@ export class Emulator extends RetroAppWrapper {
       let gamepadMouseButtons = 0;
       if (this.isGamepadMouse()) {
         gamepadMouseButtons = this.updateMouseFromGamepad();
+        this.mouseX += this.gamepadMouseX * (this.resWidth / 640.0) * this.gamepadMouseAdjust;
+        this.mouseY += this.gamepadMouseY * (this.resHeight / 480.0) * this.gamepadMouseAdjust;
       }
 
       window.Module._wrc_update_mouse(
         this.mouseX,
         this.mouseY,
-        //document.pointerLockElement ? this.mouseButtons : 0,
-        this.mouseButtons | gamepadMouseButtons
+        this.mouseButtons | gamepadMouseButtons | this.touchClick
       );
     }
 
@@ -495,8 +576,11 @@ export class Emulator extends RetroAppWrapper {
     }
 
     //this.mouseButtons = 0;
+    this.touchClick = 0;
     this.mouseX = 0;
     this.mouseY = 0;
+    this.gamepadMouseX = 0;
+    this.gamepadMouseY = 0;
     this.keyCount = 0;
   }
 
@@ -663,6 +747,9 @@ export class Emulator extends RetroAppWrapper {
     const show = !app.isKeyboardShown();
     this.setDisableInput(show ? true : false);
     app.setKeyboardShown(show);
+    if (this.touch) {
+      this.touch.setTouchEnabled(show ? false : true);
+    }
   }
 
   showTouchOverlay(show) {
@@ -691,6 +778,7 @@ export class Emulator extends RetroAppWrapper {
 
   onTouchEvent() {
     if (!this.touchEvent) {
+      this.touch.setTouchEnabled(true);
       this.touchEvent = true;
       this.checkOnScreenControls();
     }

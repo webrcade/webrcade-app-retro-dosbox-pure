@@ -1,20 +1,20 @@
 import React from 'react';
 import { Component } from 'react';
 
-import { GamepadControlsTab, KeyboardControlsTab } from './controls';
+import { GamepadControlsTab, /*KeyboardControlsTab*/ } from './controls';
 import { DosBoxSettingsEditor } from './settings';
 
 import {
   CustomPauseScreen,
   EditorScreen,
   GamepadWhiteImage,
-  KeyboardWhiteImage,
+  // KeyboardWhiteImage,
   PauseScreenButton,
   Resources,
   SaveStatesEditor,
   SaveWhiteImage,
   SettingsAppWhiteImage,
-  SnesBackground,
+  DosBackground,
   TEXT_IDS,
 } from '@webrcade/app-common';
 
@@ -63,6 +63,8 @@ export class EmulatorPauseScreen extends Component {
       return null;
     }
 
+    const isRunning = emulator.gameRunning;
+
     const additionalButtons = [
       <PauseScreenButton
         imgSrc={GamepadWhiteImage}
@@ -88,7 +90,7 @@ export class EmulatorPauseScreen extends Component {
       />,
     ];
 
-    if (cloudEnabled) {
+    if (cloudEnabled && isRunning ) {
       additionalButtons.push(
         <PauseScreenButton
           imgSrc={SaveWhiteImage}
@@ -124,13 +126,13 @@ export class EmulatorPauseScreen extends Component {
               {
                 image: GamepadWhiteImage,
                 label: Resources.getText(TEXT_IDS.GAMEPAD_CONTROLS),
-                content: <GamepadControlsTab />,
+                content: <GamepadControlsTab emulator={emulator} />,
               },
-              {
-                image: KeyboardWhiteImage,
-                label: Resources.getText(TEXT_IDS.KEYBOARD_CONTROLS),
-                content: <KeyboardControlsTab />,
-              },
+              // {
+              //   image: KeyboardWhiteImage,
+              //   label: Resources.getText(TEXT_IDS.KEYBOARD_CONTROLS),
+              //   content: <KeyboardControlsTab />,
+              // },
             ]}
           />
         ) : null}
@@ -141,9 +143,9 @@ export class EmulatorPauseScreen extends Component {
             onClose={closeCallback}
           />
         ) : null}
-        {mode === ModeEnum.STATE ? (
+        {mode === ModeEnum.STATE && isRunning ? (
           <SaveStatesEditor
-            emptyImageSrc={SnesBackground}
+            emptyImageSrc={DosBackground}
             emulator={emulator}
             onClose={closeCallback}
             showStatusCallback={emulator.saveMessageCallback}

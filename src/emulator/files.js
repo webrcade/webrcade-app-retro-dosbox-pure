@@ -1,7 +1,3 @@
-import {
-  LOG,
-} from '@webrcade/app-common';
-
 export class FileTracker {
   BACKUP_DIR = "/__BACKUP__";
   CONTENT_DIR = "/content"

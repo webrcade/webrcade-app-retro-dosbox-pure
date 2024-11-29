@@ -99,6 +99,7 @@ class App extends WebrcadeRetroApp {
       <Fragment>
         {super.render()}
         <TouchOverlay show={showCanvas} />
+        <div id="background"/>
         <Keyboard
           show={showKeyboard}
           transparency={kbTransparency}

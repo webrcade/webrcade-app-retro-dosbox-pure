@@ -3,15 +3,19 @@
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#000000" />
   <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
   <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
   <script src="%PUBLIC_URL%/js/browserfs.min.js"></script>
+  <!-- <script src="touch-emulator.js"></script> -->
 </head>
 
-<body>
+<body style="background-color: black">
   <noscript>You need to enable JavaScript to run this app.</noscript>
+  <script>
+    // TouchEmulator();
+  </script>
   <div id="root"></div>
 </body>
 

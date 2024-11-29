@@ -12,3 +12,16 @@
   // max-height: calc(96vw * 0.75);
   // border: 1px solid red;
 }
+
+#background {
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: 100vw;
+  height: 100vh;
+}
+
+body {
+  touch-action: none;
+}
+

@@ -4,8 +4,8 @@ import {
   ImageButton,
   KeyboardWhiteImage,
   PauseWhiteImage,
-  VideoGameAssetWhiteImage,
-  VideoGameAssetOffWhiteImage,
+  // VideoGameAssetWhiteImage,
+  // VideoGameAssetOffWhiteImage,
 } from '@webrcade/app-common';
 
 import './style.scss'
@@ -55,6 +55,9 @@ export class TouchOverlay extends Component {
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 emulator.toggleKeyboard();
@@ -75,6 +78,9 @@ export class TouchOverlay extends Component {
             <ImageButton
               className="touch-overlay-button touch-overlay-button-last"
               onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => {
                 e.stopPropagation();
               }}
               onClick={showPause}
