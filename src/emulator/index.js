@@ -236,7 +236,8 @@ export class Emulator extends RetroAppWrapper {
 
   CUSTOM_MAPPINGS = {
     "Wolfenstein 3D": "AA8ANgE1AjEDNAQDBQMGTAkxCgILOAw7DQQPARBTVhFUVQ==",
-    "Shadow Warrior": "ABMAFUE1GAIxAzQEMgU0BkMHRAgeCTMKRgvMDDoNBg8BEEhHEVRVElNWE05R"
+    "Shadow Warrior": "ABMAFUE1GAIxAzQEMgU0BkMHRAgeCTMKRgvMDDoNBg8BEEhHEVRVElNWE05R",
+    "Blake Stone: Aliens of Gold": "ABIANgEpAjEDNAQ0BTQGCwcNCDUJMQoyCzgMGg0dDxQQU1YRVFUTEgA="
   }
 
  async onMapTitle(title) {
@@ -522,8 +523,8 @@ export class Emulator extends RetroAppWrapper {
         e.preventDefault();
       });
       document.getElementById("background").addEventListener("touchstart", (e) => {
-          e.preventDefault();
-        });
+        e.preventDefault();
+      });
       // document.body.addEventListener("touchstart", (e) => {
       //   e.preventDefault();
       // });
@@ -563,9 +564,14 @@ export class Emulator extends RetroAppWrapper {
         this.mouseY += this.gamepadMouseY * (this.resHeight / 480.0) * this.gamepadMouseAdjust;
       }
 
+      const mouseAdjust = this.getProps().mouseSpeed;
+      let adjust = 1;
+      if (mouseAdjust !== 0 && mouseAdjust >= -5 && adjust <= 5) {
+        adjust = 1 + (mouseAdjust * .10);
+      }
       window.Module._wrc_update_mouse(
-        this.mouseX,
-        this.mouseY,
+        this.mouseX * adjust,
+        this.mouseY * adjust,
         this.mouseButtons | gamepadMouseButtons | this.touchClick
       );
     }
@@ -711,7 +717,14 @@ export class Emulator extends RetroAppWrapper {
     return this.prefs.getForceStartMenu();
   }
 
-  applyGameSettings() {}
+  applyGameSettings() {
+    let mode = GAMEPAD_MODE.GAMEPAD;
+    const propsMode = this.getProps().controllerMode;
+    if (propsMode === 1) {
+      mode = GAMEPAD_MODE.MOUSE;
+    }
+    this.prefs.setGamepadMode(mode);
+  }
 
   onArchiveFile(isDir, name, stats) {
     const autoStartPath = this.getProps().autoStartPath;

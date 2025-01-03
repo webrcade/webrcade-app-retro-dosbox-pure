@@ -36,7 +36,7 @@ export class Prefs extends AppPrefs {
     this.forceStartMenuPath = app.getStoragePath(`${this.PREFS_PREFIX}.forceStartMenu`);
     this.forceStartMenu = false;
 
-    this.gamepadModePath = app.getStoragePath(`${this.PREFS_PREFIX}.gamepadMode`);
+    //this.gamepadModePath = app.getStoragePath(`${this.PREFS_PREFIX}.gamepadMode`);
     this.gamepadMode = GAMEPAD_MODE.GAMEPAD;
   }
 
@@ -75,10 +75,8 @@ export class Prefs extends AppPrefs {
 
   setGamepadMode(mode) {
     this.gamepadMode = mode;
-    this.save();
+    //this.save();
   }
-
-
 
   // getVkCloseOnEnter() {
   //   return this.vkCloseOnEnter;

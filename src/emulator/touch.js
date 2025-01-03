@@ -6,12 +6,14 @@ export class Touch {
         // this.touchStart = {};
         // this.lastTouch = {};
         this.touchStartTime = 0;
+        this.rightTouchStartTime = 0;
         this.positionX = window.innerWidth / 2 | 0;
         this.positionY = window.innerHeight / 2 | 0;
         this.first = true;
         // this.firstTouchId = null;
         // this.secondTouchId = null;
         this.leftDown = false;
+        this.rightDown = false;
         this.lastTouch = {}
         this.lastTouchEnd = 0;
         this.touchEnabled = false;
@@ -36,7 +38,7 @@ export class Touch {
                         this.simulateMouseEvent('mousemove', 1, 1, 0);
                     }
                     this.touches.push(touch);
-// console.log(touch.clientX + ", " + touch.clientY);
+                    // console.log(touch.clientX + ", " + touch.clientY);
                     this.lastTouch[touch.identifier] = { x: touch.clientX, y: touch.clientY };
                     if (this.touches.length === 1) {
                         this.touchStartTime = Date.now();
@@ -44,8 +46,9 @@ export class Touch {
                     if (this.touches.length > 1) {
                         this.touchStartTime = 0;
                         if (this.touches.length === 2) {
-                            this.simulateMouseEvent('mousedown', 0, 0, 0);
-                            this.leftDown = true;
+                            this.rightTouchStartTime = Date.now();
+                        } else if (this.touches.length > 2) {
+                            this.rightTouchStartTime = 0;
                         }
                     }
                 }
@@ -78,6 +81,18 @@ export class Touch {
                     this.lastTouch[touch.identifier] = { x: touch.clientX, y: touch.clientY };
                 }
             }
+
+            if (this.touches.length === 2) {
+                if (!this.leftDown) {
+                    this.leftDown = true;
+                    this.simulateMouseEvent('mousedown', 0, 0, 0);
+                }
+            } else if (this.touches.length === 3) {
+                if (!this.leftDown && !this.rightDown) {
+                    this.rightDown = true;
+                    this.simulateMouseEvent('mousedown', 0, 0, 0);
+                }
+            }
         }, { passive: true });
 
         window.document.addEventListener('touchend', (e) => {
@@ -96,7 +111,6 @@ export class Touch {
             }
 
             // console.log(removedTouches)
-
             const updatedTouches = [];
             for (let i = 0; i < this.touches.length; i++) {
                 const touch = this.touches[i];
@@ -111,13 +125,22 @@ export class Touch {
 
             if (this.touches.length === 0) {
                 if (this.leftDown) {
-                    this.leftDown = false;
                     this.simulateMouseEvent('mouseup', 0, 0, 0);
+                    this.leftDown = false;
+                } else if (this.rightDown) {
+                    this.simulateMouseEvent('mouseup', 0, 0, 0);
+                    this.rightDown = false;
                 }
                 const timeDiff = Date.now() - this.touchStartTime;
                 if (timeDiff < 200) {
                     this.emulator.touchClick |= this.emulator.MOUSE_LEFT;
                     this.touchStartTime = 0;
+                }
+            } else if (this.touches.length === 1) {
+                const timeDiff = Date.now() - this.rightTouchStartTime;
+                if (timeDiff < 200) {
+                    this.emulator.touchClick |= this.emulator.MOUSE_RIGHT;
+                    this.rightTouchStartTime = 0;
                 }
             }
 
@@ -139,15 +162,11 @@ export class Touch {
             movementY: dy,
             clientX: this.positionX,
             clientY: this.positionY,
-            button: this.leftDown ? 0 : undefined,
-            buttons: this.leftDown ? 1 : undefined
+            button: this.leftDown ? 0 : this.rightDown ? 2 : undefined,
+            buttons: this.leftDown ? 0 : this.rightDown ? 2 : undefined
         }
 
         const mouseEvent = new MouseEvent(type, e);
-
-        // button: button,
-        // buttons: button === 0 ? 1 : 2 // left button (0) or right button (2)
-
         window.document.dispatchEvent(mouseEvent);
     }
 
