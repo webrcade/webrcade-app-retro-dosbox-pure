@@ -83,7 +83,7 @@ export class Touch {
             }
 
             if (this.touches.length === 2) {
-                if (!this.leftDown) {
+                if (!this.leftDown && !this.rightDown) {
                     this.leftDown = true;
                     this.simulateMouseEvent('mousedown', 0, 0, 0);
                 }
@@ -174,8 +174,15 @@ export class Touch {
         if (val) {
             setTimeout(() => {
                 this.touchEnabled = true;
-            }, 1000);
+            }, 250);
         } else {
+            this.touches = []
+            this.touchStartTime = 0;
+            this.rightTouchStartTime = 0;
+            this.leftDown = false;
+            this.rightDown = false;
+            this.lastTouch = {}
+            this.lastTouchEnd = 0;
             this.touchEnabled = false;
         }
     }
