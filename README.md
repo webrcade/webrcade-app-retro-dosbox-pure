@@ -4,7 +4,7 @@
 
 The DOS application is an emulator that runs programs or games that were designed for [DOS](https://en.wikipedia.org/wiki/DOS)-based systems.
 
-The underlying emulator is a modified version of [DOSBox Pure](https//github.com/schellingb/dosbox-pure).
+The underlying emulator is a modified version of [DOSBox Pure](https://github.com/schellingb/dosbox-pure).
 
 <p align="center">
  <a href="https://play.webrcade.com">
