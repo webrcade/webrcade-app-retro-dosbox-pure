@@ -52,6 +52,9 @@
     padding: .1rem .4rem;
     opacity: .6;
     margin-right: .5rem;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
 
     &>img {
       width: 4rem;
