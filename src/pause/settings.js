@@ -11,6 +11,8 @@ import {
   TelevisionWhiteImage,
   GamepadWhiteImage,
   KeyboardWhiteImage,
+  BlurImage,
+  ShaderSettingsTab,
   // ScreenSizeSelect,
   // ScreenControlsSelect,
   Switch,
@@ -32,23 +34,28 @@ export class DosBoxSettingsEditor extends Component {
   componentDidMount() {
     const { emulator } = this.props;
 
+    const values = {
+      origBilinearMode: emulator.getPrefs().getBilinearMode(),
+      bilinearMode: emulator.getPrefs().getBilinearMode(),
+      origScreenSize: emulator.getPrefs().getScreenSize(),
+      screenSize: emulator.getPrefs().getScreenSize(),
+      origScreenControls: emulator.getPrefs().getScreenControls(),
+      screenControls: emulator.getPrefs().getScreenControls(),
+      origVkTransparency: emulator.getPrefs().getVkTransparency(),
+      vkTransparency: emulator.getPrefs().getVkTransparency(),
+      origForceStartMenu: emulator.getPrefs().getForceStartMenu(),
+      forceStartMenu: emulator.getPrefs().getForceStartMenu(),
+      origGamepadMode: emulator.getPrefs().getGamepadMode(),
+      gamepadMode: emulator.getPrefs().getGamepadMode(),
+      // origVkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
+      // vkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
+    }
+
+    this.shaderService = this.props.emulator.getShadersService();
+    this.shaderService.addEditorValues(values);
+
     this.setState({
-      values: {
-        origBilinearMode: emulator.getPrefs().isBilinearEnabled(),
-        bilinearMode: emulator.getPrefs().isBilinearEnabled(),
-        origScreenSize: emulator.getPrefs().getScreenSize(),
-        screenSize: emulator.getPrefs().getScreenSize(),
-        origScreenControls: emulator.getPrefs().getScreenControls(),
-        screenControls: emulator.getPrefs().getScreenControls(),
-        origVkTransparency: emulator.getPrefs().getVkTransparency(),
-        vkTransparency: emulator.getPrefs().getVkTransparency(),
-        origForceStartMenu: emulator.getPrefs().getForceStartMenu(),
-        forceStartMenu: emulator.getPrefs().getForceStartMenu(),
-        origGamepadMode: emulator.getPrefs().getGamepadMode(),
-        gamepadMode: emulator.getPrefs().getGamepadMode(),
-        // origVkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
-        // vkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
-      },
+      values: values,
     });
   }
 
@@ -67,11 +74,10 @@ export class DosBoxSettingsEditor extends Component {
     return (
       <EditorScreen
         showCancel={true}
-        onOk={() => {
+        onOk={async () => {
           let change = false;
           if (values.origBilinearMode !== values.bilinearMode) {
-            emulator.getPrefs().setBilinearEnabled(values.bilinearMode);
-            emulator.updateBilinearFilter();
+            emulator.getPrefs().setBilinearMode(values.bilinearMode);
             change = true;
           }
           if (values.origScreenSize !== values.screenSize) {
@@ -108,6 +114,11 @@ export class DosBoxSettingsEditor extends Component {
           if (change) {
             emulator.getPrefs().save();
           }
+
+          // Set the shader
+          await this.shaderService.setShader(values.shaderId);
+          emulator.updateBilinearFilter();
+
           onClose();
         }}
         onClose={onClose}
@@ -133,6 +144,7 @@ export class DosBoxSettingsEditor extends Component {
             content: (
               <AppDisplaySettingsTab
                 emulator={emulator}
+                isBilinearMode={true}
                 isActive={tabIndex === 1}
                 showOnScreenControls={showOnScreenControls}
                 setFocusGridComps={setFocusGridComps}
@@ -142,12 +154,26 @@ export class DosBoxSettingsEditor extends Component {
             ),
           },
           {
+            image: BlurImage,
+            label: 'Shader Settings',
+            content: (
+              <ShaderSettingsTab
+                shaderService={this.shaderService}
+                emulator={emulator}
+                isActive={tabIndex === 2}
+                setFocusGridComps={setFocusGridComps}
+                values={values}
+                setValues={setValues}
+              />
+            )
+          },
+          {
             image: KeyboardWhiteImage,
             label: 'Virtual Keyboard Settings',
             content: (
               <DosBoxVirtualKeyboardTab
                   emulator={emulator}
-                  isActive={tabIndex === 2}
+                  isActive={tabIndex === 3}
                   setFocusGridComps={setFocusGridComps}
                   values={values}
                   setValues={setValues}
