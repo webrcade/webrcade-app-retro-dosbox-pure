@@ -38,6 +38,9 @@ export class Prefs extends NewRetroPrefs {
 
     //this.gamepadModePath = app.getStoragePath(`${this.PREFS_PREFIX}.gamepadMode`);
     this.gamepadMode = GAMEPAD_MODE.GAMEPAD;
+
+    // Session-only (not persisted)
+    this.cpuSpeedSession = 0;
   }
 
   async load() {
@@ -76,6 +79,14 @@ export class Prefs extends NewRetroPrefs {
   setGamepadMode(mode) {
     this.gamepadMode = mode;
     //this.save();
+  }
+
+  getCpuSpeedSession() {
+    return this.cpuSpeedSession;
+  }
+
+  setCpuSpeedSession(value) {
+    this.cpuSpeedSession = value;
   }
 
   // getVkCloseOnEnter() {

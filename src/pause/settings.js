@@ -20,6 +20,7 @@ import {
 } from '@webrcade/app-common';
 import { VkTransparencySelect } from './vktransparencyselect';
 import { GamepadModeSelect } from './gamepadmodeselect';
+import { CpuSpeedSelect } from './cpuspeedselect';
 
 export class DosBoxSettingsEditor extends Component {
   constructor() {
@@ -47,6 +48,8 @@ export class DosBoxSettingsEditor extends Component {
       forceStartMenu: emulator.getPrefs().getForceStartMenu(),
       origGamepadMode: emulator.getPrefs().getGamepadMode(),
       gamepadMode: emulator.getPrefs().getGamepadMode(),
+      origCpuSpeedSession: emulator.getPrefs().getCpuSpeedSession(),
+      cpuSpeedSession: emulator.getPrefs().getCpuSpeedSession(),
       // origVkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
       // vkCloseOnEnter: emulator.getPrefs().getVkCloseOnEnter(),
     }
@@ -104,6 +107,11 @@ export class DosBoxSettingsEditor extends Component {
           if (values.origGamepadMode !== values.gamepadMode) {
             emulator.getPrefs().setGamepadMode(values.gamepadMode);
             change = true;
+          }
+
+          if (values.origCpuSpeedSession !== values.cpuSpeedSession) {
+            emulator.getPrefs().setCpuSpeedSession(values.cpuSpeedSession);
+            emulator.updateCpuSpeed();
           }
 
           // if (values.origVkCloseOnEnter !== values.vkCloseOnEnter) {
@@ -252,9 +260,11 @@ export class DosBoxSettingsTab extends FieldsTab {
       super();
       this.forceMenuRef = React.createRef();
       this.gamepadModeRef = React.createRef();
+      this.cpuSpeedRef = React.createRef();
       // this.vkCloseOnEnterRef = React.createRef();
       this.gridComps = [
           [this.gamepadModeRef],
+          [this.cpuSpeedRef],
           [this.forceMenuRef],
           // [this.vkCloseOnEnterRef],
       ];
@@ -271,7 +281,7 @@ export class DosBoxSettingsTab extends FieldsTab {
   }
 
   render() {
-      const { forceMenuRef, gamepadModeRef } = this;
+      const { forceMenuRef, gamepadModeRef, cpuSpeedRef } = this;
       const { focusGrid } = this.context;
       const { setValues, values } = this.props;
 
@@ -288,6 +298,19 @@ export class DosBoxSettingsTab extends FieldsTab {
                       }}
                       value={values.gamepadMode}
                       onPad={e => focusGrid.moveFocus(e.type, gamepadModeRef)}
+                    />
+                  </FieldControl>
+              </FieldRow>
+              <FieldRow>
+                  <FieldLabel>CPU Speed (Session)</FieldLabel>
+                  <FieldControl>
+                    <CpuSpeedSelect
+                      selectRef={cpuSpeedRef}
+                      onChange={(value) => {
+                          setValues({ ...values, ...{ cpuSpeedSession: value } });
+                      }}
+                      value={values.cpuSpeedSession}
+                      onPad={e => focusGrid.moveFocus(e.type, cpuSpeedRef)}
                     />
                   </FieldControl>
               </FieldRow>
