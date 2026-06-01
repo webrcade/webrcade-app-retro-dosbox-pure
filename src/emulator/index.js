@@ -717,6 +717,20 @@ export class Emulator extends RetroAppWrapper {
     return this.prefs.getForceStartMenu();
   }
 
+  getCpuSpeed() {
+    return this.getProps().cpuSpeed || 0;
+  }
+
+  getCpuSpeedSession() {
+    return this.prefs.getCpuSpeedSession();
+  }
+
+  updateCpuSpeed() {
+    if (window.Module && window.Module._wrc_set_options) {
+      window.Module._wrc_set_options(this.OPT1);
+    }
+  }
+
   applyGameSettings() {
     let mode = GAMEPAD_MODE.GAMEPAD;
     const propsMode = this.getProps().controllerMode;
@@ -724,6 +738,8 @@ export class Emulator extends RetroAppWrapper {
       mode = GAMEPAD_MODE.MOUSE;
     }
     this.prefs.setGamepadMode(mode);
+    // Initialize session CPU speed from the game prop so the pause screen reflects the active speed
+    this.prefs.setCpuSpeedSession(this.getProps().cpuSpeed || 0);
   }
 
   onArchiveFile(isDir, name, stats) {

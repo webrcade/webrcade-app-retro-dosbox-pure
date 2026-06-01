@@ -12,6 +12,7 @@ export function GamepadModeSelect(props) {
 
   return (
     <Select
+      width="16rem"
       ref={selectRef}
       options={opts}
       onChange={value => onChange(value)}
