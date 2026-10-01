@@ -528,6 +528,7 @@ export class Emulator extends RetroAppWrapper {
     if (this.firstFrame) {
       this.blockKeys = true;
       this.firstFrame = false;
+      this.updateVkTransparency();
       this.touch = new Touch(this, this.canvas);
 
       this.canvas.addEventListener("touchstart", (e) => {
