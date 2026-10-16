@@ -354,8 +354,21 @@ export class Emulator extends RetroAppWrapper {
       (controllers.isControlDown(0, CIDS.X) ? this.MOUSE_MIDDLE : 0))
   }
 
-  handleEscape(controllers) {
-    if (controllers.isControlDown(0, CIDS.LTRIG) && controllers.isControlDown(0, CIDS.RANALOG)) {
+  pollControls() {
+    const { controllers } = this;
+    super.pollControls();
+
+    // WRC - LTRIG+RANALOG opens the virtual keyboard (quick tap) or
+    // switches gamepad/mouse mode (held >= 1s), via the shared
+    // CIDS.WRC_CUSTOM synthetic control (see its own comment in
+    // @webrcade/app-common/src/input/controls.js) rather than the old
+    // handleEscape()/CIDS.ESCAPE interception (removed) - that combo
+    // stopped synthesizing CIDS.ESCAPE, so this app now uses the control
+    // reserved to replace it, including for the release-wait below (waiting
+    // on CIDS.ESCAPE's release here would resolve almost immediately
+    // regardless of real hold time, breaking both the quick-tap and the
+    // long-hold behavior).
+    if (!this.paused && controllers.isControlDown(0, CIDS.WRC_CUSTOM)) {
       if (!this.vkbPending) {
         this.vkbPending = true;
         this.vkPendingStart = Date.now();
@@ -373,7 +386,7 @@ export class Emulator extends RetroAppWrapper {
         }}, 1000);
 
         controllers
-        .waitUntilControlReleased(0 /*i*/, CIDS.ESCAPE)
+        .waitUntilControlReleased(0 /*i*/, CIDS.WRC_CUSTOM)
           .then(() => {
             this.vkbPending = false;
             if (this.vkPendingStart !== 0) {
@@ -382,9 +395,7 @@ export class Emulator extends RetroAppWrapper {
             }
           });
       }
-      return true;
     }
-    return false;
   }
 
   isDirectFileSupportedForArchives() {
@@ -517,6 +528,7 @@ export class Emulator extends RetroAppWrapper {
     if (this.firstFrame) {
       this.blockKeys = true;
       this.firstFrame = false;
+      this.updateVkTransparency();
       this.touch = new Touch(this, this.canvas);
 
       this.canvas.addEventListener("touchstart", (e) => {
